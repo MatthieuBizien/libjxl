@@ -246,11 +246,9 @@ mod test {
         use crate::container::ContainerParser;
         use crate::decode::decode_jxl_codestream;
 
-        let spot_jxl_path = "resources/test/internal/spot/spot.jxl";
-        let spot_data = match std::fs::read(spot_jxl_path) {
-            Ok(data) => data,
-            Err(_) => return Ok(()), // Skip if test file doesn't exist
-        };
+        let spot_jxl_path = "resources/test/conformance_test_images/spot.jxl";
+        let spot_data = std::fs::read(spot_jxl_path)
+            .unwrap_or_else(|e| panic!("Failed to read test file {}: {}", spot_jxl_path, e));
 
         let codestream = ContainerParser::collect_codestream(&spot_data)?;
 
