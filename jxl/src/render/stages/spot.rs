@@ -5,24 +5,18 @@
 
 use crate::render::{RenderPipelineInOutStage, RenderPipelineStage};
 
-/// Render spot color with border pixel support
+/// Render spot color
 #[derive(Clone, Copy)]
 pub struct SpotColorStage {
     /// Spot color channel index
     spot_c: usize,
     /// Spot color in linear RGBA
     spot_color: [f32; 4],
-    /// Border support for compatibility with libjxl (currently 1 pixel)
-    border_pixels: u8,
 }
 
 impl std::fmt::Display for SpotColorStage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "spot color stage for channel {} (border: {})",
-            self.spot_c, self.border_pixels
-        )
+        write!(f, "spot color stage for channel {}", self.spot_c)
     }
 }
 
@@ -32,7 +26,6 @@ impl SpotColorStage {
         Self {
             spot_c: 3 + offset,
             spot_color,
-            border_pixels: 1, // Support 1-pixel border like libjxl
         }
     }
 }
