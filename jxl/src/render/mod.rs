@@ -3,24 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//! Render pipeline for JPEG XL images.
-//!
-//! ## Stage Ordering
-//!
-//! Render pipeline stages are executed in a specific order to match the libjxl reference implementation:
-//!
-//! - **Modular/VarDCT conversion** – Convert raw coefficients to floating-point values
-//! - **Chroma upsampling** – Upsample chroma channels if needed
-//! - **Gaborish filter** – Apply restoration filter
-//! - **Extra channel upsampling** – Upsample extra channels (unless done late)
-//! - **Patches** – Apply patches feature
-//! - **Main upsampling** – Final image upsampling
-//! - **Noise synthesis** – Add synthetic noise
-//! - **Color space conversion** – YCbCr/XYB to linear sRGB
-//! - **Blending** – Alpha blending and frame composition
-//! - **SpotColor** – Apply spot color channels (after blending, before tone-mapping/CMS)
-//! - **Save/Output** – Save reference frames or output final image data
-
 use std::{any::Any, marker::PhantomData};
 
 use crate::{
