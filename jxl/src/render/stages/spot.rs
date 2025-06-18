@@ -31,14 +31,11 @@ impl SpotColorStage {
 }
 
 impl RenderPipelineStage for SpotColorStage {
-    // Use InOutStage with 1-pixel border support to match libjxl's xextra handling
     type Type = RenderPipelineInOutStage<f32, f32, 1, 1, 0, 0>;
 
     fn uses_channel(&self, c: usize) -> bool {
         c < 3 || c == self.spot_c
     }
-
-    // New signature for InOutStage: (input, output) buffers with border pixels
     fn process_row_chunk(
         &mut self,
         _position: (usize, usize),
@@ -57,11 +54,11 @@ impl RenderPipelineStage for SpotColorStage {
         if self.spot_c >= row.len() {
             // Gracefully handle case where spot channel index is out of bounds
             // This can happen when pipeline has fewer channels than expected
-            // Just copy RGB channels through without modification (silent failure)
+            // Just copy RGB channels through without modification
             for c in 0..3.min(row.len()) {
                 let (input_rows, output_rows) = &mut row[c];
-                let center_input = input_rows[1]; // Center row from input
-                let output_row = &mut output_rows[0]; // Output row
+                let center_input = input_rows[1];
+                let output_row = &mut output_rows[0];
                 output_row[..xsize].copy_from_slice(&center_input[1..xsize + 1]);
             }
             return;
@@ -69,24 +66,19 @@ impl RenderPipelineStage for SpotColorStage {
 
         let scale = self.spot_color[3];
 
-        // Early exit optimization for scale == 0 (like libjxl)
+        // Early exit optimization for scale == 0
         if scale == 0.0 {
-            // Just copy input to output without modification
             for (c, (input_rows, output_rows)) in row.iter_mut().enumerate() {
                 if c < 3 || c == self.spot_c {
-                    // Copy center row (input_rows[1] -> output_rows[0])
-                    // InOutStage input has 3 rows: [border_top, center, border_bottom]
-                    // InOutStage output has 1 row: [center]
-                    let center_input = input_rows[1]; // Center row from input
-                    let output_row = &mut output_rows[0]; // Output row
+                    let center_input = input_rows[1];
+                    let output_row = &mut output_rows[0];
                     output_row[..xsize].copy_from_slice(&center_input[1..xsize + 1]);
-                    // Skip left border
                 }
             }
             return;
         }
 
-        // Process pixels including border region (like libjxl's xextra handling)
+        // Process pixels including border region
         for idx in 0..(xsize + 2) {
             let input_r = row[0].0[1][idx];
             let input_g = row[1].0[1][idx];
@@ -98,7 +90,7 @@ impl RenderPipelineStage for SpotColorStage {
             let output_g = mix * self.spot_color[1] + (1.0 - mix) * input_g;
             let output_b = mix * self.spot_color[2] + (1.0 - mix) * input_b;
 
-            // Write to output (border pixels: idx 0 and xsize+1 are not written to final output)
+            // Write to output (skip border pixels)
             if idx > 0 && idx <= xsize {
                 let output_idx = idx - 1;
                 row[0].1[0][output_idx] = output_r;
