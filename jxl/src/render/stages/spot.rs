@@ -520,4 +520,159 @@ mod test {
         
         Ok(())
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn border_pixel_values_correct() -> Result<()> {
+        // This test demonstrates the border pixel indexing bug
+        // Create 3x1 image: [0.2, 0.5, 0.8] RGB, [1.0, 1.0, 1.0] spot
+        // With border pixels = 0.1 for all channels (automatic border handling)
+        // Expected: spot color [0.3, 0.3, 0.3, 1.0] should blend:
+        // - Pixel 0: 0.3 * 1.0 + 0.7 * 0.2 = 0.44 (NOT 0.3 * 1.0 + 0.7 * 0.1 = 0.37)
+        // - Pixel 2: 0.3 * 1.0 + 0.7 * 0.8 = 0.86 (NOT 0.3 * 1.0 + 0.7 * 0.1 = 0.37)
+        
+        use crate::render::test::make_and_run_simple_pipeline;
+        
+        let mut input_r = Image::new((3, 1))?;
+        let mut input_g = Image::new((3, 1))?;
+        let mut input_b = Image::new((3, 1))?;
+        let mut input_s = Image::new((3, 1))?;
+        
+        // Set distinct values to detect border mixing bug
+        input_r.as_rect_mut().row(0).copy_from_slice(&[0.2, 0.5, 0.8]);
+        input_g.as_rect_mut().row(0).copy_from_slice(&[0.2, 0.5, 0.8]);
+        input_b.as_rect_mut().row(0).copy_from_slice(&[0.2, 0.5, 0.8]);
+        input_s.as_rect_mut().row(0).copy_from_slice(&[1.0, 1.0, 1.0]); // Full spot coverage
+        
+        // Spot color: gray [0.3, 0.3, 0.3] with full alpha
+        let stage = SpotColorStage::new(0, [0.3, 0.3, 0.3, 1.0]);
+        
+        let (_, output) = make_and_run_simple_pipeline::<_, f32, f32>(
+            stage,
+            &[input_r, input_g, input_b, input_s],
+            (3, 1),
+            0,
+            256,
+        )?;
+        
+        // Calculate expected values (spot blending formula):
+        // output = mix * spot_color + (1 - mix) * input
+        // where mix = spot_alpha * spot_channel_value = 1.0 * 1.0 = 1.0
+        let mix = 1.0; // spot_alpha * spot_value
+        let expected_0 = mix * 0.3 + (1.0 - mix) * 0.2; // = 0.3 * 1.0 + 0.0 * 0.2 = 0.3
+        let expected_1 = mix * 0.3 + (1.0 - mix) * 0.5; // = 0.3 * 1.0 + 0.0 * 0.5 = 0.3
+        let expected_2 = mix * 0.3 + (1.0 - mix) * 0.8; // = 0.3 * 1.0 + 0.0 * 0.8 = 0.3
+        
+        // With full spot coverage (mix=1.0), all pixels should be pure spot color
+        assert_all_almost_eq!(&[output[0].as_rect().row(0)[0]], &[expected_0], 1e-6);
+        assert_all_almost_eq!(&[output[0].as_rect().row(0)[1]], &[expected_1], 1e-6);
+        assert_all_almost_eq!(&[output[0].as_rect().row(0)[2]], &[expected_2], 1e-6);
+        
+        // Test case with partial spot coverage to better expose border bug
+        let mut input_s2 = Image::new((3, 1))?;
+        input_s2.as_rect_mut().row(0).copy_from_slice(&[0.5, 0.5, 0.5]); // Partial coverage
+        
+        let (_, output2) = make_and_run_simple_pipeline::<_, f32, f32>(
+            stage,
+            &[
+                output[0].clone(), // Use previous R as input
+                output[1].clone(), // Use previous G as input
+                output[2].clone(), // Use previous B as input 
+                input_s2
+            ],
+            (3, 1),
+            0,
+            256,
+        )?;
+        
+        // With 50% spot coverage, blending should occur:
+        let mix2 = 0.5; // spot_alpha * spot_value = 1.0 * 0.5
+        let expected2_0 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
+        let expected2_1 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
+        let expected2_2 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
+        
+        // The actual test that will expose the border bug:
+        // If border pixels (value 0.1) are incorrectly used for edge pixels,
+        // the edge pixels will have different values than expected
+        assert_all_almost_eq!(&[output2[0].as_rect().row(0)[0]], &[expected2_0], 1e-6);
+        assert_all_almost_eq!(&[output2[0].as_rect().row(0)[2]], &[expected2_2], 1e-6);
+        
+        println!("✅ Border pixel values are correct - no mixing with border samples");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn edge_pixels_match_libjxl_golden() -> Result<()> {
+        // This test exposes the border pixel indexing bug using xextra border processing
+        // With xextra=1, border pixels are filled with 0.25
+        // The bug causes edge pixels to incorrectly use these 0.25 border values
+        // instead of their actual pixel values
+        
+        use crate::render::test::make_and_run_simple_pipeline_with_xextra;
+        
+        // Create 3x1 image with distinct edge values that differ from border value (0.25)
+        let mut input_r = Image::new((3, 1))?;
+        let mut input_g = Image::new((3, 1))?;
+        let mut input_b = Image::new((3, 1))?;
+        let mut input_s = Image::new((3, 1))?;
+        
+        // Use values that are clearly different from border value 0.25
+        input_r.as_rect_mut().row(0).copy_from_slice(&[0.1, 0.5, 0.9]); // Edge: 0.1, 0.9
+        input_g.as_rect_mut().row(0).copy_from_slice(&[0.1, 0.5, 0.9]);
+        input_b.as_rect_mut().row(0).copy_from_slice(&[0.1, 0.5, 0.9]);
+        input_s.as_rect_mut().row(0).copy_from_slice(&[0.8, 0.8, 0.8]); // Partial spot coverage
+        
+        // Spot color that will reveal the difference
+        let stage = SpotColorStage::new(0, [0.0, 0.0, 0.0, 1.0]); // Black spot
+        
+        // Test with xextra=1 (border pixels = 0.25)
+        let (_, output_with_borders) = make_and_run_simple_pipeline_with_xextra::<_, f32, f32>(
+            stage,
+            &[input_r, input_g, input_b, input_s],
+            (3, 1),
+            0,
+            256,
+            1, // xextra = 1 creates borders with value 0.25
+        )?;
+        
+        // Calculate expected values for spot blending:
+        // output = mix * spot_color + (1 - mix) * input
+        // where mix = spot_alpha * spot_channel_value = 1.0 * 0.8 = 0.8
+        let mix = 0.8;
+        let spot_color = 0.0; // Black spot
+        
+        // Expected values using ACTUAL pixel values (not border values):
+        let expected_left = mix * spot_color + (1.0 - mix) * 0.1;  // = 0.8*0.0 + 0.2*0.1 = 0.02
+        let expected_center = mix * spot_color + (1.0 - mix) * 0.5; // = 0.8*0.0 + 0.2*0.5 = 0.1
+        let expected_right = mix * spot_color + (1.0 - mix) * 0.9;  // = 0.8*0.0 + 0.2*0.9 = 0.18
+        
+        // The output includes border pixels, so size is (5, 3) = (3+2*1, 1+2*1)
+        let (out_width, out_height) = output_with_borders[0].as_rect().size();
+        println!("Output size: {}x{}", out_width, out_height);
+        
+        // Find the center row (middle of the 3 rows when xextra=1)
+        let center_row_idx = out_height / 2; // Should be 1 for 3 rows
+        let output_row = output_with_borders[0].as_rect().row(center_row_idx);
+        
+        // The actual pixel data starts at index 1 (after left border)
+        // Original 3x1 image maps to positions [1, 2, 3] in 5-wide output
+        let actual_left = output_row[1];   // Original pixel 0
+        let actual_center = output_row[2]; // Original pixel 1  
+        let actual_right = output_row[3];  // Original pixel 2
+        
+        // This test will FAIL if the bug exists:
+        // Bug makes edge pixels use border value (0.25), giving wrong results
+        println!("Output values: [{:.3}, {:.3}, {:.3}]", actual_left, actual_center, actual_right);
+        println!("Expected: [{:.3}, {:.3}, {:.3}]", expected_left, expected_center, expected_right);
+        println!("Border values in output: left={:.3}, right={:.3}", output_row[0], output_row[4]);
+        
+        // These assertions will fail with the current buggy implementation
+        assert_all_almost_eq!(&[actual_left], &[expected_left], 1e-6);
+        assert_all_almost_eq!(&[actual_center], &[expected_center], 1e-6);
+        assert_all_almost_eq!(&[actual_right], &[expected_right], 1e-6);
+        
+        println!("✅ Edge pixels correctly use actual pixel values, not border samples");
+        Ok(())
+    }
 }
