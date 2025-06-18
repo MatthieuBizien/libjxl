@@ -168,7 +168,7 @@ pub(super) fn make_and_run_simple_pipeline_with_xextra<
     } else {
         image_size
     };
-    
+
     let final_size = stage.new_size(actual_image_size);
     const LOG_GROUP_SIZE: usize = 8;
     let all_channels = (0..input_images.len()).collect::<Vec<_>>();
@@ -201,15 +201,15 @@ pub(super) fn make_and_run_simple_pipeline_with_xextra<
             .map(|img| {
                 let (width, height) = img.as_rect().size();
                 let mut extended = Image::new((width + 2 * xextra, height + 2 * xextra))?;
-                
+
                 // Copy the original image to the center
                 for y in 0..height {
                     for x in 0..width {
-                        extended.as_rect_mut().row(y + xextra)[x + xextra] = 
+                        extended.as_rect_mut().row(y + xextra)[x + xextra] =
                             img.as_rect().row(y)[x];
                     }
                 }
-                
+
                 // Fill border pixels with test value (0.25)
                 for y in 0..(height + 2 * xextra) {
                     for x in 0..(width + 2 * xextra) {
@@ -218,12 +218,15 @@ pub(super) fn make_and_run_simple_pipeline_with_xextra<
                         }
                     }
                 }
-                
+
                 Ok(extended)
             })
             .collect()
     } else {
-        Ok(input_images.iter().map(|img| img.try_clone().unwrap()).collect())
+        Ok(input_images
+            .iter()
+            .map(|img| img.try_clone().unwrap())
+            .collect())
     };
     let extended_images = extended_images?;
 
