@@ -35,15 +35,6 @@ impl SpotColorStage {
             border_pixels: 1, // Support 1-pixel border like libjxl
         }
     }
-
-    pub fn new_without_borders(offset: usize, spot_color: [f32; 4]) -> Self {
-        debug_assert!(spot_color.iter().all(|c| c.is_finite()));
-        Self {
-            spot_c: 3 + offset,
-            spot_color,
-            border_pixels: 0, // No border support for backward compatibility
-        }
-    }
 }
 
 impl RenderPipelineStage for SpotColorStage {
