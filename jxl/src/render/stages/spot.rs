@@ -258,7 +258,6 @@ mod test {
 
         // The real test would be to decode an image with and without spot colors
         // and verify different outputs, but for now this tests the API exists
-        println!("✅ render_spotcolors option implemented and configurable");
 
         Ok(())
     }
@@ -280,7 +279,6 @@ mod test {
             Ok(data) => data,
             Err(_) => {
                 // Skip test if the golden test file doesn't exist
-                println!("⏭️ Skipping CLI golden test - spot.jxl not found");
                 return Ok(());
             }
         };
@@ -327,14 +325,10 @@ mod test {
         };
 
         // The outputs should be different when spot colors are enabled vs disabled
-        if hash_with_spots != hash_no_spots {
-            println!("✅ CLI --no-spotcolors option working: outputs differ");
-            println!("   Hash with spots: 0x{:x}", hash_with_spots);
-            println!("   Hash without spots: 0x{:x}", hash_no_spots);
-        } else {
-            println!("⚠️ CLI spot color control may not be working - outputs identical");
-            println!("   This could mean the test image has no spot colors, or the feature isn't working");
-        }
+        assert_ne!(
+            hash_with_spots, hash_no_spots,
+            "Spot color rendering should produce different output when enabled vs disabled"
+        );
 
         Ok(())
     }
