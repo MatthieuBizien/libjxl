@@ -175,6 +175,49 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    fn spot_channel_not_modified() -> Result<()> {
+        // The real issue: current implementation uses RenderPipelineInPlaceStage for ALL channels
+        // but libjxl uses kInput (read-only) for spot channel and kInPlace for RGB
+        // This test demonstrates the architectural difference
+        
+        let stage = SpotColorStage::new(0, [0.5, 0.5, 0.5, 1.0]);
+        
+        // Current implementation uses RenderPipelineInPlaceStage trait for the entire stage
+        // This means ALL channels (RGB + spot) are treated as mutable
+        // But libjxl distinguishes: RGB = kInPlace, Spot = kInput
+        
+        // Check stage type - this reveals the architectural issue
+        use crate::render::internal::RenderPipelineStageInfo;
+        use crate::render::internal::RenderPipelineStageType;
+        
+        // Current implementation uses InPlaceStage for everything
+        let stage_type = <SpotColorStage as RenderPipelineStage>::Type::TYPE;
+        if stage_type == RenderPipelineStageType::InPlace {
+            panic!("Current implementation uses InPlace mode for all channels - doesn't distinguish between kInput (spot) and kInPlace (RGB) like libjxl");
+        }
+
+        Ok(())
+    }
+
+    // Helper function to check if two images have the same data
+    #[cfg(test)]
+    fn assert_data_equal(img1: &Image<f32>, img2: &Image<f32>) -> bool {
+        if img1.size() != img2.size() {
+            return false;
+        }
+        
+        for y in 0..img1.size().1 {
+            let row1 = img1.as_rect().row(y);
+            let row2 = img2.as_rect().row(y);
+            if row1 != row2 {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
     fn border_pixels_processed() -> Result<()> {
         use crate::render::test::make_and_run_simple_pipeline_with_xextra;
         
