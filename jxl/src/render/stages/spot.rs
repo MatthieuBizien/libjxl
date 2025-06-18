@@ -57,16 +57,12 @@ impl RenderPipelineStage for SpotColorStage {
         if self.spot_c >= row.len() {
             // Gracefully handle case where spot channel index is out of bounds
             // This can happen when pipeline has fewer channels than expected
-            eprintln!("Warning: Spot channel index {} out of bounds (have {} channels), skipping spot color processing", 
-                     self.spot_c, row.len());
-
-            // Just copy RGB channels through without modification
+            // Just copy RGB channels through without modification (silent failure)
             for c in 0..3.min(row.len()) {
                 let (input_rows, output_rows) = &mut row[c];
                 let center_input = input_rows[1]; // Center row from input
                 let output_row = &mut output_rows[0]; // Output row
                 output_row[..xsize].copy_from_slice(&center_input[1..xsize + 1]);
-                // Skip left border
             }
             return;
         }
