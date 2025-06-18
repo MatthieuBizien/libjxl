@@ -272,23 +272,6 @@ mod test {
         Ok(())
     }
 
-    // Helper function to check if two images have the same data
-    #[cfg(test)]
-    fn assert_data_equal(img1: &Image<f32>, img2: &Image<f32>) -> bool {
-        if img1.size() != img2.size() {
-            return false;
-        }
-        
-        for y in 0..img1.size().1 {
-            let row1 = img1.as_rect().row(y);
-            let row2 = img2.as_rect().row(y);
-            if row1 != row2 {
-                return false;
-            }
-        }
-        true
-    }
-
     #[test]
     #[cfg_attr(miri, ignore)]
     fn border_pixels_processed() -> Result<()> {
@@ -597,7 +580,7 @@ mod test {
         // With 50% spot coverage, blending should occur:
         let mix2 = 0.5; // spot_alpha * spot_value = 1.0 * 0.5
         let expected2_0 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
-        let expected2_1 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
+        let _expected2_1 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
         let expected2_2 = mix2 * 0.3 + (1.0 - mix2) * 0.3; // = 0.5 * 0.3 + 0.5 * 0.3 = 0.3 (unchanged)
         
         // The actual test that will expose the border bug:
@@ -760,7 +743,7 @@ mod test {
         )?;
         
         // Extract the actual pixel values (center row, excluding borders)
-        let (out_width, out_height) = output[0].as_rect().size();
+        let (_, out_height) = output[0].as_rect().size();
         let center_row_idx = out_height / 2;
         let output_row = output[0].as_rect().row(center_row_idx);
         
