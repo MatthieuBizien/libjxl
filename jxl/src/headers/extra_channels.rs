@@ -89,6 +89,9 @@ impl ExtraChannelInfo {
     pub fn alpha_associated(&self) -> bool {
         self.alpha_associated
     }
+    pub fn spot_color(&self) -> Option<[f32; 4]> {
+        self.spot_color
+    }
     fn check(&self, _: &Empty) -> Result<(), Error> {
         if self.dim_shift > 3 {
             Err(Error::DimShiftTooLarge(self.dim_shift))

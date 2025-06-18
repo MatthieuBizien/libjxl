@@ -11,7 +11,7 @@ use crate::{
     headers::{
         color_encoding::ColorSpace,
         encodings::UnconditionalCoder,
-        extra_channels::ExtraChannelInfo,
+        extra_channels::{ExtraChannel, ExtraChannelInfo},
         frame_header::{Encoding, FrameHeader, Toc, TocNonserialized},
         permutation::Permutation,
         FileHeader,
@@ -686,7 +686,16 @@ impl Frame {
             }
         }
 
-        // TODO: spot colors
+        // ─── Spot colours (libjxl order: after blending, before tone-map) ──
+        if decoder_state.enable_output {          // same guard used for tone-map
+            for (ec_index, eci) in metadata.extra_channel_info.iter().enumerate() {
+                if eci.ec_type == ExtraChannel::SpotColor {
+                    if let Some(rgba) = eci.spot_color() {
+                        pipeline = pipeline.add_stage(SpotColorStage::new(ec_index, rgba))?;
+                    }
+                }
+            }
+        }
 
         if frame_header.is_visible() {
             for i in 0..num_channels {
