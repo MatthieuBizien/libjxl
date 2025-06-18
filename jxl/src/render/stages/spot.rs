@@ -86,41 +86,26 @@ impl RenderPipelineStage for SpotColorStage {
             return;
         }
 
-        // Process with border pixels (xextra support)
-        // Input buffer layout: [row_above, current_row, row_below] each with left/right borders
-        // We process the extended region including borders to match libjxl behavior
-
-        // Process each pixel including border region
+        // Process pixels including border region (like libjxl's xextra handling)
         for idx in 0..(xsize + 2) {
-            // FIXED: Correct border pixel indexing
-            // Border pixels (idx=0 and idx=xsize+1) should be skipped, not written to output
-            let output_idx = if idx == 0 {
-                // Left border pixel - don't write to output
-                continue;
-            } else if idx == xsize + 1 {
-                // Right border pixel - don't write to output
-                continue;
-            } else {
-                // Regular pixel: idx 1..=xsize maps to output 0..xsize-1
-                idx - 1
-            };
-
-            // Get input values from center row (row[1]) of each channel
-            let input_r = row[0].0[1][idx]; // input_rows[1][idx]
+            let input_r = row[0].0[1][idx];
             let input_g = row[1].0[1][idx];
             let input_b = row[2].0[1][idx];
             let input_s = row[self.spot_c].0[1][idx];
 
-            // Calculate spot color mixing
             let mix = scale * input_s;
+            let output_r = mix * self.spot_color[0] + (1.0 - mix) * input_r;
+            let output_g = mix * self.spot_color[1] + (1.0 - mix) * input_g;
+            let output_b = mix * self.spot_color[2] + (1.0 - mix) * input_b;
 
-            // Write output values (no need for bounds check since we skip borders)
-            row[0].1[0][output_idx] = mix * self.spot_color[0] + (1.0 - mix) * input_r;
-            row[1].1[0][output_idx] = mix * self.spot_color[1] + (1.0 - mix) * input_g;
-            row[2].1[0][output_idx] = mix * self.spot_color[2] + (1.0 - mix) * input_b;
-
-            // Spot channel is read-only in libjxl (kInput mode) - just copy
-            row[self.spot_c].1[0][output_idx] = input_s;
+            // Write to output (border pixels: idx 0 and xsize+1 are not written to final output)
+            if idx > 0 && idx <= xsize {
+                let output_idx = idx - 1;
+                row[0].1[0][output_idx] = output_r;
+                row[1].1[0][output_idx] = output_g;
+                row[2].1[0][output_idx] = output_b;
+                row[self.spot_c].1[0][output_idx] = input_s;
+            }
         }
     }
 }
