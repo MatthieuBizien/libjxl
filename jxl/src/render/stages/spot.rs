@@ -21,10 +21,10 @@ impl std::fmt::Display for SpotColorStage {
 }
 
 impl SpotColorStage {
-    pub fn new(offset: usize, spot_color: [f32; 4]) -> Self {
+    pub fn new(spot_c_offset: usize, spot_color: [f32; 4]) -> Self {
         debug_assert!(spot_color.iter().all(|c| c.is_finite()));
         Self {
-            spot_c: 3 + offset,
+            spot_c: 3 + spot_c_offset,
             spot_color,
         }
     }
@@ -36,6 +36,8 @@ impl RenderPipelineStage for SpotColorStage {
     fn uses_channel(&self, c: usize) -> bool {
         c < 3 || c == self.spot_c
     }
+
+    // `row` should only contain color channels and the spot channel.
     fn process_row_chunk(
         &mut self,
         _position: (usize, usize),
