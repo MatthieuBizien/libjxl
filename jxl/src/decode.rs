@@ -17,6 +17,7 @@ use crate::{
 pub struct DecodeOptions<'a> {
     pub xyb_output_linear: bool,
     enable_output: bool,
+    pub render_spotcolors: bool,
     pub frame_callback: Option<&'a mut dyn FnMut(&Frame) -> Result<(), Error>>,
 }
 
@@ -25,12 +26,13 @@ impl<'a> DecodeOptions<'a> {
         DecodeOptions {
             xyb_output_linear: true,
             enable_output: true,
+            render_spotcolors: true,
             frame_callback: None,
         }
     }
 }
 
-impl<'a> Default for DecodeOptions<'a> {
+impl Default for DecodeOptions<'_> {
     fn default() -> Self {
         Self::new()
     }
@@ -82,6 +84,7 @@ pub fn decode_jxl_codestream(
     let mut decoder_state = DecoderState::new(file_header);
     decoder_state.xyb_output_linear = options.xyb_output_linear;
     decoder_state.enable_output = options.enable_output;
+    decoder_state.render_spotcolors = options.render_spotcolors;
     loop {
         let mut frame = Frame::new(&mut br, decoder_state)?;
         let mut section_readers = frame.sections(&mut br)?;
