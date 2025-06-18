@@ -782,4 +782,91 @@ mod test {
         println!("✅ Border indexing bug mechanism demonstrated");
         Ok(())
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn multiple_spot_colors_with_borders() -> Result<()> {
+        // Test: Multiple spot color stages in sequence to ensure border fix works
+        // throughout the pipeline when stages are applied sequentially
+        
+        use crate::render::test::make_and_run_simple_pipeline;
+        
+        let (xs, ys) = (3, 1);
+        
+        // Create base RGB channels
+        let mut input_r = Image::new((xs, ys))?;
+        let mut input_g = Image::new((xs, ys))?;
+        let mut input_b = Image::new((xs, ys))?;
+        
+        // Set up distinct base colors
+        input_r.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.5, 1.0]);
+        input_g.as_rect_mut().row(0).copy_from_slice(&[0.2, 0.6, 0.8]);
+        input_b.as_rect_mut().row(0).copy_from_slice(&[0.4, 0.7, 0.6]);
+        
+        // First spot color: magenta ink on pixel 1 (center)
+        let mut spot1 = Image::new((xs, ys))?;
+        spot1.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.8, 0.0]); // Only center pixel
+        
+        let stage1 = SpotColorStage::new(0, [1.0, 0.0, 1.0, 1.0]); // Magenta
+        
+        // Apply first spot color
+        let (_, output1) = make_and_run_simple_pipeline::<_, f32, f32>(
+            stage1,
+            &[input_r, input_g, input_b, spot1],
+            (xs, ys),
+            0,
+            256,
+        )?;
+        
+        // Second spot color: yellow ink on pixel 2 (right edge)
+        let mut spot2 = Image::new((xs, ys))?;
+        spot2.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.0, 0.6]); // Only right pixel
+        
+        let stage2 = SpotColorStage::new(0, [1.0, 1.0, 0.0, 1.0]); // Yellow
+        
+        // Apply second spot color to the result of the first
+        let (_, output2) = make_and_run_simple_pipeline::<_, f32, f32>(
+            stage2,
+            &[output1[0].clone(), output1[1].clone(), output1[2].clone(), spot2],
+            (xs, ys),
+            0,
+            256,
+        )?;
+        
+        // Check final results
+        let final_r = output2[0].as_rect().row(0);
+        let final_g = output2[1].as_rect().row(0);
+        let final_b = output2[2].as_rect().row(0);
+        
+        println!("Multiple spot colors:");
+        println!("Pixel 0 (unchanged): [{:.3}, {:.3}, {:.3}]", final_r[0], final_g[0], final_b[0]);
+        println!("Pixel 1 (magenta): [{:.3}, {:.3}, {:.3}]", final_r[1], final_g[1], final_b[1]);
+        println!("Pixel 2 (yellow): [{:.3}, {:.3}, {:.3}]", final_r[2], final_g[2], final_b[2]);
+        
+        // Verify pixel 0 is unchanged (no spot applied)
+        assert_all_almost_eq!(&[final_r[0]], &[0.0], 1e-6);
+        assert_all_almost_eq!(&[final_g[0]], &[0.2], 1e-6);
+        assert_all_almost_eq!(&[final_b[0]], &[0.4], 1e-6);
+        
+        // Verify pixel 1 has magenta spot applied (from first stage)
+        // mix = 0.8 * 1.0 = 0.8, so: 0.8 * magenta + 0.2 * original
+        let expected_1_r = 0.8 * 1.0 + 0.2 * 0.5; // 0.9
+        let expected_1_g = 0.8 * 0.0 + 0.2 * 0.6; // 0.12
+        let expected_1_b = 0.8 * 1.0 + 0.2 * 0.7; // 0.94
+        assert_all_almost_eq!(&[final_r[1]], &[expected_1_r], 1e-6);
+        assert_all_almost_eq!(&[final_g[1]], &[expected_1_g], 1e-6);
+        assert_all_almost_eq!(&[final_b[1]], &[expected_1_b], 1e-6);
+        
+        // Verify pixel 2 has yellow spot applied (from second stage)
+        // Original pixel 2 values: [1.0, 0.8, 0.6], yellow applied with mix = 0.6
+        let expected_2_r = 0.6 * 1.0 + 0.4 * 1.0; // 1.0
+        let expected_2_g = 0.6 * 1.0 + 0.4 * 0.8; // 0.92
+        let expected_2_b = 0.6 * 0.0 + 0.4 * 0.6; // 0.24
+        assert_all_almost_eq!(&[final_r[2]], &[expected_2_r], 1e-6);
+        assert_all_almost_eq!(&[final_g[2]], &[expected_2_g], 1e-6);
+        assert_all_almost_eq!(&[final_b[2]], &[expected_2_b], 1e-6);
+        
+        println!("✅ Multiple spot colors work correctly with border fix");
+        Ok(())
+    }
 }
