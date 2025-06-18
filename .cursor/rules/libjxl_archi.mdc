@@ -1,0 +1,95 @@
+---
+description: code architecture** of the reference JPEG XL C++ implementation libjxl
+globs: 
+alwaysApply: false
+---
+Based on my exploration of the `/libjxl` directory, here's the **code architecture** of the reference JPEG XL C++ implementation:
+
+## High-Level Structure
+
+The `/libjxl` repository contains the **official JPEG XL C++ reference implementation** used for conformance testing by jxl-rs. It follows a modular architecture with these main components:
+
+### 1. **Core Library (`/lib/`)**
+- **`lib/jxl/`** - Main JPEG XL codec implementation
+- **`lib/jpegli/`** - Enhanced JPEG encoder/decoder
+- **`lib/extras/`** - Additional utilities and I/O support
+- **`lib/include/`** - Public API headers
+- **`lib/threads/`** - Threading and parallel processing
+
+### 2. **Tools & Applications (`/tools/`)**
+- **`cjxl`** - JPEG XL encoder CLI tool
+- **`djxl`** - JPEG XL decoder CLI tool  
+- **Benchmarking tools** - Performance measurement utilities
+- **Fuzzers** - Security testing tools
+- **Conformance tools** - Specification compliance testing
+
+### 3. **Examples (`/examples/`)**
+- Demonstration applications showing API usage
+- Progressive decoding examples
+- Metadata handling examples
+
+## Core Architecture (lib/jxl/)
+
+The main library follows the **traditional block transform model** with modern improvements:
+
+### **Decoding Pipeline:**
+1. **Headers** (`headers.h`, `field_*`) - Metadata and image parameters
+2. **Bitstream** (`entropy_coder.h`, `dec_ans_*`) - Entropy decoding (rANS)
+3. **Dequantize** (`quantizer.h`) - Coefficient restoration
+4. **DC Prediction** (`predictor.h`) - DC coefficient prediction
+5. **Chroma from Luma** (`chroma_from_luma.h`) - Color correlation
+6. **IDCT** (`dct*.h`) - Inverse discrete cosine transform (2x2 to 32x32)
+7. **Post-processing** (optional):
+   - **Gaborish** (`enc_gaborish.h`) - Deblocking convolution
+   - **Edge Preserving Filter** (`epf.h`) - Adaptive smoothing
+   - **Noise Injection** (`noise*`) - Perceptual enhancement
+8. **Color Space Conversion** (`color_*`, `dec_xyb.h`) - XYB to RGB
+
+### **Key Modules:**
+
+#### **Entropy Coding** 
+- ANS (Asymmetric Numeral Systems) implementation
+- Context modeling and clustering
+- Huffman coding support
+
+#### **Transform Processing**
+- Variable DCT sizes (2x2 to 32x32)
+- AC strategy selection (`ac_strategy.cc`)
+- Floating-point precision for HDR support
+
+#### **Modular Image Encoding** (`modular/`)
+- **`encoding/`** - Lossless/near-lossless coding
+- **`transform/`** - Palette, RCT, and other transforms
+- Predictive coding with adaptive predictors
+
+#### **Render Pipeline** (`render_pipeline/`)
+Multi-stage rendering with parallel processing:
+- **Color space stages** - XYB, YCbCr, linear conversions
+- **Enhancement stages** - Upsampling, noise, patches, splines
+- **Post-processing** - EPF, Gaborish, blending
+- **Output stages** - CMS, tone mapping, final rendering
+
+### **Design Principles:**
+
+1. **Performance-Oriented**
+   - SIMD-friendly design
+   - Multi-threaded parallel processing
+   - Memory bandwidth optimization
+   - Support for 400+ Megapixel/s decoding
+
+2. **High Quality Support**
+   - Full float32 precision for HDR
+   - Extensive color space support
+   - Perceptual quality optimization
+
+3. **Modular & Extensible**
+   - Clear separation between lossy/lossless paths
+   - Progressive decoding support
+   - Configurable post-processing pipeline
+
+4. **Specification Compliant**
+   - Implements ISO/IEC 18181 standard
+   - Extensive conformance testing
+   - Reference implementation status
+
+This architecture mirrors the design principles used in **jxl-rs**, providing the reference implementation for conformance validation and algorithmic correctness verification.

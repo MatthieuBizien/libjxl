@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Architecture
+
+This is **jxl-rs**, a Rust implementation of JPEG XL decoder with the following structure:
+
+### Workspace Structure
+- **3 crates**: `jxl` (main library), `jxl_cli` (CLI tool), `jxl_macros` (procedural macros)
+- **Safety-focused**: Denies unsafe code and enforces safety documentation
+
+### Main Library (`jxl/`)
+
+**Core Modules:**
+- `bit_reader` - Low-level bit stream reading
+- `container` - JPEG XL container format parsing  
+- `decode` - Main decoding entry point
+- `error` - Error handling types
+- `image` - Image data structures
+
+**Format Processing:**
+- `headers/` - All header types (metadata, frame headers, etc.)
+- `entropy_coding/` - ANS, Huffman, hybrid integers, LZ77
+- `frame/` - Frame-level processing with modular/VarDCT paths
+- `var_dct/` - Variable DCT transform implementation
+
+**Advanced Features:**
+- `features/` - Blending modes, noise synthesis, patches, splines
+- `color/` - Color space transformations
+- `icc/` - ICC profile handling
+- `render/` - Multi-stage rendering pipeline
+
+**Infrastructure:**
+- `util/` - Math utilities, bit manipulation, NDArray helpers
+- `resources/test/` - Conformance test suite (38+ test images)
+
+### Key Design Principles
+- **Modular architecture** with clear separation of concerns
+- **Conformance-driven** with extensive test validation against libjxl
+- **Safety-first** approach with `#![deny(unsafe_code)]`
+- **Multi-layered validation** using golden data and conformance tests
+
+The organization mirrors the JPEG XL specification structure while maintaining Rust best practices for safety and modularity.
+
+For details about the architecture of the original C++ library libjxl, see 
