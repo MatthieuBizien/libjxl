@@ -869,4 +869,160 @@ mod test {
         println!("✅ Multiple spot colors work correctly with border fix");
         Ok(())
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn edge_image_sizes_with_borders() -> Result<()> {
+        // Test: 1x1, 2x1, 1x2 images with border processing
+        // Ensure border fix works correctly with minimal dimensions
+        
+        use crate::render::test::make_and_run_simple_pipeline_with_xextra;
+        
+        // Test 1: 1x1 image (single pixel)
+        {
+            let (xs, ys) = (1, 1);
+            let mut input_r = Image::new((xs, ys))?;
+            let mut input_g = Image::new((xs, ys))?;
+            let mut input_b = Image::new((xs, ys))?;
+            let mut spot = Image::new((xs, ys))?;
+            
+            // Single pixel values
+            input_r.as_rect_mut().row(0)[0] = 0.5;
+            input_g.as_rect_mut().row(0)[0] = 0.6;
+            input_b.as_rect_mut().row(0)[0] = 0.7;
+            spot.as_rect_mut().row(0)[0] = 0.8; // Full spot coverage
+            
+            let stage = SpotColorStage::new(0, [1.0, 0.0, 1.0, 1.0]); // Magenta
+            
+            let (_, output) = make_and_run_simple_pipeline_with_xextra::<_, f32, f32>(
+                stage,
+                &[input_r, input_g, input_b, spot],
+                (xs, ys),
+                0,
+                256,
+                1, // xextra = 1
+            )?;
+            
+            // Extract center pixel from extended output (3x3 -> center at [1,1])
+            let center_r = output[0].as_rect().row(1)[1];
+            let center_g = output[1].as_rect().row(1)[1];
+            let center_b = output[2].as_rect().row(1)[1];
+            
+            // Expected: 0.8 * magenta + 0.2 * original
+            let expected_r = 0.8 * 1.0 + 0.2 * 0.5; // 0.9
+            let expected_g = 0.8 * 0.0 + 0.2 * 0.6; // 0.12
+            let expected_b = 0.8 * 1.0 + 0.2 * 0.7; // 0.94
+            
+            assert_all_almost_eq!(&[center_r], &[expected_r], 1e-6);
+            assert_all_almost_eq!(&[center_g], &[expected_g], 1e-6);
+            assert_all_almost_eq!(&[center_b], &[expected_b], 1e-6);
+            
+            println!("✅ 1x1 image works correctly");
+        }
+        
+        // Test 2: 2x1 image (horizontal strip)
+        {
+            let (xs, ys) = (2, 1);
+            let mut input_r = Image::new((xs, ys))?;
+            let mut input_g = Image::new((xs, ys))?;
+            let mut input_b = Image::new((xs, ys))?;
+            let mut spot = Image::new((xs, ys))?;
+            
+            // Two horizontal pixels
+            input_r.as_rect_mut().row(0).copy_from_slice(&[0.2, 0.8]);
+            input_g.as_rect_mut().row(0).copy_from_slice(&[0.3, 0.9]);
+            input_b.as_rect_mut().row(0).copy_from_slice(&[0.4, 1.0]);
+            spot.as_rect_mut().row(0).copy_from_slice(&[0.6, 0.0]); // Only left pixel
+            
+            let stage = SpotColorStage::new(0, [0.0, 1.0, 1.0, 1.0]); // Cyan
+            
+            let (_, output) = make_and_run_simple_pipeline_with_xextra::<_, f32, f32>(
+                stage,
+                &[input_r, input_g, input_b, spot],
+                (xs, ys),
+                0,
+                256,
+                1, // xextra = 1
+            )?;
+            
+            // Extract center row, actual pixels (positions 1,2 in 4-wide output)
+            let row_r = output[0].as_rect().row(1);
+            let row_g = output[1].as_rect().row(1);
+            let row_b = output[2].as_rect().row(1);
+            
+            // Left pixel: spot applied (0.6 * cyan + 0.4 * original)
+            let expected_left_r = 0.6 * 0.0 + 0.4 * 0.2; // 0.08
+            let expected_left_g = 0.6 * 1.0 + 0.4 * 0.3; // 0.72
+            let expected_left_b = 0.6 * 1.0 + 0.4 * 0.4; // 0.76
+            
+            assert_all_almost_eq!(&[row_r[1]], &[expected_left_r], 1e-6);
+            assert_all_almost_eq!(&[row_g[1]], &[expected_left_g], 1e-6);
+            assert_all_almost_eq!(&[row_b[1]], &[expected_left_b], 1e-6);
+            
+            // Right pixel: unchanged (no spot)
+            assert_all_almost_eq!(&[row_r[2]], &[0.8], 1e-6);
+            assert_all_almost_eq!(&[row_g[2]], &[0.9], 1e-6);
+            assert_all_almost_eq!(&[row_b[2]], &[1.0], 1e-6);
+            
+            println!("✅ 2x1 image works correctly");
+        }
+        
+        // Test 3: 1x2 image (vertical strip)
+        {
+            let (xs, ys) = (1, 2);
+            let mut input_r = Image::new((xs, ys))?;
+            let mut input_g = Image::new((xs, ys))?;
+            let mut input_b = Image::new((xs, ys))?;
+            let mut spot = Image::new((xs, ys))?;
+            
+            // Two vertical pixels
+            input_r.as_rect_mut().row(0)[0] = 0.1;
+            input_r.as_rect_mut().row(1)[0] = 0.9;
+            input_g.as_rect_mut().row(0)[0] = 0.2;
+            input_g.as_rect_mut().row(1)[0] = 1.0;
+            input_b.as_rect_mut().row(0)[0] = 0.3;
+            input_b.as_rect_mut().row(1)[0] = 0.8;
+            spot.as_rect_mut().row(0)[0] = 0.0; // No spot on top
+            spot.as_rect_mut().row(1)[0] = 0.7; // Spot on bottom
+            
+            let stage = SpotColorStage::new(0, [1.0, 1.0, 0.0, 1.0]); // Yellow
+            
+            let (_, output) = make_and_run_simple_pipeline_with_xextra::<_, f32, f32>(
+                stage,
+                &[input_r, input_g, input_b, spot],
+                (xs, ys),
+                0,
+                256,
+                1, // xextra = 1
+            )?;
+            
+            // Extract center column, actual pixels (rows 1,2 in 4-high output)
+            let top_r = output[0].as_rect().row(1)[1];
+            let top_g = output[1].as_rect().row(1)[1];
+            let top_b = output[2].as_rect().row(1)[1];
+            
+            let bottom_r = output[0].as_rect().row(2)[1];
+            let bottom_g = output[1].as_rect().row(2)[1];
+            let bottom_b = output[2].as_rect().row(2)[1];
+            
+            // Top pixel: unchanged (no spot)
+            assert_all_almost_eq!(&[top_r], &[0.1], 1e-6);
+            assert_all_almost_eq!(&[top_g], &[0.2], 1e-6);
+            assert_all_almost_eq!(&[top_b], &[0.3], 1e-6);
+            
+            // Bottom pixel: spot applied (0.7 * yellow + 0.3 * original)
+            let expected_bottom_r = 0.7 * 1.0 + 0.3 * 0.9; // 0.97
+            let expected_bottom_g = 0.7 * 1.0 + 0.3 * 1.0; // 1.0
+            let expected_bottom_b = 0.7 * 0.0 + 0.3 * 0.8; // 0.24
+            
+            assert_all_almost_eq!(&[bottom_r], &[expected_bottom_r], 1e-6);
+            assert_all_almost_eq!(&[bottom_g], &[expected_bottom_g], 1e-6);
+            assert_all_almost_eq!(&[bottom_b], &[expected_bottom_b], 1e-6);
+            
+            println!("✅ 1x2 image works correctly");
+        }
+        
+        println!("✅ All edge image sizes work correctly with border fix");
+        Ok(())
+    }
 }
