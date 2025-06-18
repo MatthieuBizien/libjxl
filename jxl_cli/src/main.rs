@@ -65,6 +65,10 @@ struct Opt {
     ///  If specified, writes the ICC profile of the decoded image
     #[clap(long)]
     icc_out: Option<PathBuf>,
+
+    /// Disable spot color rendering (equivalent to libjxl's --norender_spotcolors)
+    #[clap(long)]
+    no_spotcolors: bool,
 }
 
 fn main() -> Result<(), Error> {
@@ -125,6 +129,7 @@ fn main() -> Result<(), Error> {
 
     let mut options = DecodeOptions::new();
     options.xyb_output_linear = String::from(opt.output.to_string_lossy()).ends_with(".npy");
+    options.render_spotcolors = !opt.no_spotcolors;
     let (image_data, icc_bytes) = jxl::decode::decode_jxl_codestream(options, &codestream)?;
 
     let icc_result = save_icc(icc_bytes, opt.icc_out);
