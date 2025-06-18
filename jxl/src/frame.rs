@@ -110,6 +110,7 @@ pub struct DecoderState {
     reference_frames: [Option<ReferenceFrame>; Self::MAX_STORED_FRAMES],
     pub xyb_output_linear: bool,
     pub enable_output: bool,
+    pub render_spotcolors: bool,
 }
 
 impl DecoderState {
@@ -121,6 +122,7 @@ impl DecoderState {
             reference_frames: [None, None, None, None],
             xyb_output_linear: true,
             enable_output: true,
+            render_spotcolors: true,
         }
     }
 
@@ -687,7 +689,7 @@ impl Frame {
         }
 
         // ─── Spot colours (libjxl order: after blending, before tone-map) ──
-        if decoder_state.enable_output {          // same guard used for tone-map
+        if decoder_state.enable_output && decoder_state.render_spotcolors {
             for (ec_index, eci) in metadata.extra_channel_info.iter().enumerate() {
                 if eci.ec_type == ExtraChannel::SpotColor {
                     if let Some(rgba) = eci.spot_color() {
