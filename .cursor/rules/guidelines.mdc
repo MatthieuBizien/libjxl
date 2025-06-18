@@ -5,7 +5,8 @@ alwaysApply: true
 ---
 # Guidelines that you should ALWAYS follow when implementing
 
-1) do ATOMIC commits as soon as you finish a step
+1) Follow **strict** TDD (test-driven development)
+2) do ATOMIC commits as soon as you finish a step
     BAD: commit "implement XXX and YYY"
     GOOD: commit "implement 1A: XXX" ; commit "implement 2C: YYY"
-2) run `cargo check && cargo clippy && cargo test --release --all` BEFORE commiting
+3) run `cargo check && cargo clippy && cargo test --release --all` BEFORE commiting
