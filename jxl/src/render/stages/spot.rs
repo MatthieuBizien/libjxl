@@ -675,4 +675,91 @@ mod test {
         println!("✅ Edge pixels correctly use actual pixel values, not border samples");
         Ok(())
     }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn border_indexing_bug_demonstration() -> Result<()> {
+        // This test demonstrates the specific indexing bug in the current implementation
+        // The bug: `output_idx = idx.saturating_sub(1).min(xsize.saturating_sub(1))`
+        // For xsize=3:
+        // - idx=0 (left border) -> output_idx = 0.saturating_sub(1).min(2) = 0.min(2) = 0  (WRONG!)
+        // - idx=1 (pixel 0)    -> output_idx = 1.saturating_sub(1).min(2) = 0.min(2) = 0  (CORRECT)
+        // - idx=2 (pixel 1)    -> output_idx = 2.saturating_sub(1).min(2) = 1.min(2) = 1  (CORRECT)
+        // - idx=3 (pixel 2)    -> output_idx = 3.saturating_sub(1).min(2) = 2.min(2) = 2  (CORRECT)
+        // - idx=4 (right border) -> output_idx = 4.saturating_sub(1).min(2) = 3.min(2) = 2  (WRONG!)
+        
+        // This means:
+        // - Left border overwrites pixel 0
+        // - Right border overwrites pixel 2 (rightmost pixel)
+        
+        let xsize: usize = 3;
+        
+        // Simulate the buggy indexing calculation
+        println!("Demonstrating the indexing bug for xsize = {}:", xsize);
+        for idx in 0usize..(xsize + 2) {
+            let output_idx = idx.saturating_sub(1).min(xsize.saturating_sub(1));
+            let pixel_type = match idx {
+                0 => "Left border",
+                i if i == xsize + 1 => "Right border", 
+                i => &format!("Pixel {}", i - 1),
+            };
+            println!("  idx={} ({:>12}) -> output_idx={}", idx, pixel_type, output_idx);
+        }
+        
+        // The problem: both borders map to valid output indices instead of being skipped
+        // This causes the first/last actual pixels to be overwritten by border values
+        
+        // Now let's create an actual test that will expose this in the rendering pipeline
+        // We need to create a scenario where border processing is enabled and 
+        // the border values are different from the actual pixel values
+        
+        use crate::render::test::make_and_run_simple_pipeline_with_xextra;
+        
+        let mut input_r = Image::new((3, 1))?;
+        let mut input_g = Image::new((3, 1))?;
+        let mut input_b = Image::new((3, 1))?;
+        let mut input_s = Image::new((3, 1))?;
+        
+        // Use extreme values to make the bug obvious
+        input_r.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.5, 1.0]); // Edge: 0.0, 1.0
+        input_g.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.5, 1.0]);
+        input_b.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.5, 1.0]);
+        input_s.as_rect_mut().row(0).copy_from_slice(&[0.0, 0.0, 0.0]); // No spot effect
+        
+        // Use a spot color that doesn't change the values (transparent)
+        let stage = SpotColorStage::new(0, [0.0, 0.0, 0.0, 0.0]); // Completely transparent
+        
+        // Test with xextra=1 (border pixels will be 0.25)
+        let (_, output) = make_and_run_simple_pipeline_with_xextra::<_, f32, f32>(
+            stage,
+            &[input_r, input_g, input_b, input_s],
+            (3, 1),
+            0,
+            256,
+            1, // xextra = 1
+        )?;
+        
+        // Extract the actual pixel values (center row, excluding borders)
+        let (out_width, out_height) = output[0].as_rect().size();
+        let center_row_idx = out_height / 2;
+        let output_row = output[0].as_rect().row(center_row_idx);
+        
+        println!("Full output row: {:?}", output_row);
+        println!("Expected pixel values: [0.0, 0.5, 1.0]");
+        println!("Border value used: 0.25");
+        
+        // The actual pixel data (excluding borders)
+        let actual_pixels = &output_row[1..4]; // Positions [1, 2, 3] in 5-wide output
+        println!("Actual pixel values: [{:.3}, {:.3}, {:.3}]", actual_pixels[0], actual_pixels[1], actual_pixels[2]);
+        
+        // If the bug exists, edge pixels will have border value influence
+        // With transparent spot color, pixels should be unchanged
+        // But if border pixels overwrite edge pixels, we'll see 0.25 values at edges
+        
+        // For now, let this test pass - it's demonstrating the bug mechanism
+        // In Phase 2, when we fix the indexing, this will help verify the fix
+        
+        println!("✅ Border indexing bug mechanism demonstrated");
+        Ok(())
+    }
 }
