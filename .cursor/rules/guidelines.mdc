@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Guidelines that you should ALWAYS follow when implementing
+
+1) do ATOMIC commits as soon as you finish a step
+    BAD: commit "implement XXX and YYY"
+    GOOD: commit "implement 1A: XXX" ; commit "implement 2C: YYY"
+2) run `cargo check && cargo clippy && cargo test --release --all` BEFORE commiting
