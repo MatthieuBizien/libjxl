@@ -33,8 +33,11 @@ impl SpotColorStage {
 impl RenderPipelineStage for SpotColorStage {
     type Type = RenderPipelineInOutStage<f32, f32, 1, 1, 0, 0>;
 
-    fn uses_channel(&self, c: usize) -> bool {
-        c < 3 || c == self.spot_c
+    fn uses_channel(&self, _c: usize) -> bool {
+        // The stage needs access to all channels so that it can faithfully
+        // copy unchanged ones from input to output. Therefore we always
+        // return true here.
+        true
     }
 
     // `row` should only contain color channels and the spot channel.
@@ -44,62 +47,44 @@ impl RenderPipelineStage for SpotColorStage {
         xsize: usize,
         row: &mut [(&[&[f32]], &mut [&mut [f32]])],
     ) {
-        // Check that we have the required channels: RGB (0,1,2) + spot channel
-        if row.len() < 4 {
-            panic!(
-                "insufficient channels for spot color processing; expected at least 4, found {}",
-                row.len()
-            );
-        }
-
-        // Check if the spot channel index is valid
+        // Ensure the spot channel index is valid for this row slice. If it is
+        // missing (which should not happen), fall back to copying channels
+        // unchanged.
         if self.spot_c >= row.len() {
-            // Gracefully handle case where spot channel index is out of bounds
-            // This can happen when pipeline has fewer channels than expected
-            // Just copy RGB channels through without modification
-            for c in 0..3.min(row.len()) {
-                let (input_rows, output_rows) = &mut row[c];
-                let center_input = input_rows[1];
-                let output_row = &mut output_rows[0];
-                output_row[..xsize].copy_from_slice(&center_input[1..xsize + 1]);
+            for (input_rows, output_rows) in row.iter_mut() {
+                let center_in = input_rows[1];
+                let out_row = &mut output_rows[0];
+                out_row[..xsize].copy_from_slice(&center_in[1..xsize + 1]);
             }
             return;
         }
 
         let scale = self.spot_color[3];
 
-        // Early exit optimization for scale == 0
+        // First copy all channels through unchanged (central row, excluding
+        // border columns). This guarantees that channels we do not explicitly
+        // modify are preserved.
+        for (input_rows, output_rows) in row.iter_mut() {
+            let center_in = input_rows[1];
+            let out_row = &mut output_rows[0];
+            out_row[..xsize].copy_from_slice(&center_in[1..xsize + 1]);
+        }
+
+        // If the spot color has zero opacity, the copied data is already
+        // correct and we can return early.
         if scale == 0.0 {
-            for (c, (input_rows, output_rows)) in row.iter_mut().enumerate() {
-                if c < 3 || c == self.spot_c {
-                    let center_input = input_rows[1];
-                    let output_row = &mut output_rows[0];
-                    output_row[..xsize].copy_from_slice(&center_input[1..xsize + 1]);
-                }
-            }
             return;
         }
 
-        // Process pixels including border region
-        for idx in 0..(xsize + 2) {
-            let input_r = row[0].0[1][idx];
-            let input_g = row[1].0[1][idx];
-            let input_b = row[2].0[1][idx];
-            let input_s = row[self.spot_c].0[1][idx];
+        // Apply spot-colour mixing to the RGB channels.
+        for idx in 0..xsize {
+            let s_val = row[self.spot_c].1[0][idx];
+            let mix = scale * s_val;
 
-            let mix = scale * input_s;
-            let output_r = mix * self.spot_color[0] + (1.0 - mix) * input_r;
-            let output_g = mix * self.spot_color[1] + (1.0 - mix) * input_g;
-            let output_b = mix * self.spot_color[2] + (1.0 - mix) * input_b;
-
-            // Write to output (skip border pixels)
-            if idx > 0 && idx <= xsize {
-                let output_idx = idx - 1;
-                row[0].1[0][output_idx] = output_r;
-                row[1].1[0][output_idx] = output_g;
-                row[2].1[0][output_idx] = output_b;
-                row[self.spot_c].1[0][output_idx] = input_s;
-            }
+            // Modify in place in the already-copied output rows.
+            row[0].1[0][idx] = mix * self.spot_color[0] + (1.0 - mix) * row[0].1[0][idx];
+            row[1].1[0][idx] = mix * self.spot_color[1] + (1.0 - mix) * row[1].1[0][idx];
+            row[2].1[0][idx] = mix * self.spot_color[2] + (1.0 - mix) * row[2].1[0][idx];
         }
     }
 }
