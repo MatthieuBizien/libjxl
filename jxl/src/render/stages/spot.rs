@@ -106,7 +106,18 @@ impl RenderPipelineStage for SpotColorStage {
         
         // Process each pixel including border region
         for idx in 0..(xsize + 2) {
-            let output_idx = idx.saturating_sub(1).min(xsize.saturating_sub(1));
+            // FIXED: Correct border pixel indexing
+            // Border pixels (idx=0 and idx=xsize+1) should be skipped, not written to output
+            let output_idx = if idx == 0 {
+                // Left border pixel - don't write to output
+                continue;
+            } else if idx == xsize + 1 {
+                // Right border pixel - don't write to output  
+                continue;
+            } else {
+                // Regular pixel: idx 1..=xsize maps to output 0..xsize-1
+                idx - 1
+            };
             
             // Get input values from center row (row[1]) of each channel
             let input_r = row[0].0[1][idx]; // input_rows[1][idx]
@@ -117,15 +128,13 @@ impl RenderPipelineStage for SpotColorStage {
             // Calculate spot color mixing
             let mix = scale * input_s;
             
-            // Write output values
-            if output_idx < xsize {
-                row[0].1[0][output_idx] = mix * self.spot_color[0] + (1.0 - mix) * input_r;
-                row[1].1[0][output_idx] = mix * self.spot_color[1] + (1.0 - mix) * input_g;
-                row[2].1[0][output_idx] = mix * self.spot_color[2] + (1.0 - mix) * input_b;
-                
-                // Spot channel is read-only in libjxl (kInput mode) - just copy
-                row[self.spot_c].1[0][output_idx] = input_s;
-            }
+            // Write output values (no need for bounds check since we skip borders)
+            row[0].1[0][output_idx] = mix * self.spot_color[0] + (1.0 - mix) * input_r;
+            row[1].1[0][output_idx] = mix * self.spot_color[1] + (1.0 - mix) * input_g;
+            row[2].1[0][output_idx] = mix * self.spot_color[2] + (1.0 - mix) * input_b;
+            
+            // Spot channel is read-only in libjxl (kInput mode) - just copy
+            row[self.spot_c].1[0][output_idx] = input_s;
         }
     }
 }
@@ -697,13 +706,24 @@ mod test {
         // Simulate the buggy indexing calculation
         println!("Demonstrating the indexing bug for xsize = {}:", xsize);
         for idx in 0usize..(xsize + 2) {
-            let output_idx = idx.saturating_sub(1).min(xsize.saturating_sub(1));
+            // OLD BUGGY LOGIC (for demonstration):
+            let old_output_idx = idx.saturating_sub(1).min(xsize.saturating_sub(1));
+            
+            // NEW CORRECT LOGIC:
+            let new_behavior = if idx == 0 {
+                "SKIP (left border)"
+            } else if idx == xsize + 1 {
+                "SKIP (right border)"  
+            } else {
+                "PROCESS"
+            };
+            
             let pixel_type = match idx {
                 0 => "Left border",
                 i if i == xsize + 1 => "Right border", 
                 i => &format!("Pixel {}", i - 1),
             };
-            println!("  idx={} ({:>12}) -> output_idx={}", idx, pixel_type, output_idx);
+            println!("  idx={} ({:>12}) -> OLD: output_idx={}, NEW: {}", idx, pixel_type, old_output_idx, new_behavior);
         }
         
         // The problem: both borders map to valid output indices instead of being skipped
