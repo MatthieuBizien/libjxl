@@ -148,3 +148,125 @@ pub(super) fn test_stage_consistency<
     });
     Ok(())
 }
+
+#[cfg(test)]
+pub(super) fn make_and_run_simple_pipeline_with_xextra<
+    S: RenderPipelineStage,
+    InputT: ImageDataType,
+    OutputT: ImageDataType + std::ops::Mul<Output = OutputT>,
+>(
+    stage: S,
+    input_images: &[Image<InputT>],
+    image_size: (usize, usize),
+    downsampling_shift: usize,
+    chunk_size: usize,
+    xextra: usize,
+) -> Result<(S, Vec<Image<OutputT>>)> {
+    // Adjust image size if we're using extended images
+    let actual_image_size = if xextra > 0 {
+        (image_size.0 + 2 * xextra, image_size.1 + 2 * xextra)
+    } else {
+        image_size
+    };
+    
+    let final_size = stage.new_size(actual_image_size);
+    const LOG_GROUP_SIZE: usize = 8;
+    let all_channels = (0..input_images.len()).collect::<Vec<_>>();
+    let uses_channel: Vec<_> = all_channels
+        .iter()
+        .map(|x| stage.uses_channel(*x))
+        .collect();
+    let mut pipeline = SimpleRenderPipelineBuilder::new_with_chunk_size(
+        input_images.len(),
+        actual_image_size,
+        downsampling_shift,
+        LOG_GROUP_SIZE,
+        chunk_size,
+    )
+    .add_stage(stage)?;
+    for i in 0..input_images.len() {
+        pipeline = pipeline.add_stage(SaveStage::<OutputT>::new(
+            SaveStageType::Output,
+            i,
+            final_size,
+            OutputT::from_f64(1.0),
+        )?)?;
+    }
+    let mut pipeline = pipeline.build()?;
+
+    // Create extended input images with border pixels if xextra > 0
+    let extended_images: Result<Vec<_>> = if xextra > 0 {
+        input_images
+            .iter()
+            .map(|img| {
+                let (width, height) = img.as_rect().size();
+                let mut extended = Image::new((width + 2 * xextra, height + 2 * xextra))?;
+                
+                // Copy the original image to the center
+                for y in 0..height {
+                    for x in 0..width {
+                        extended.as_rect_mut().row(y + xextra)[x + xextra] = 
+                            img.as_rect().row(y)[x];
+                    }
+                }
+                
+                // Fill border pixels with test value (0.25)
+                for y in 0..(height + 2 * xextra) {
+                    for x in 0..(width + 2 * xextra) {
+                        if y < xextra || y >= height + xextra || x < xextra || x >= width + xextra {
+                            extended.as_rect_mut().row(y)[x] = InputT::from_f64(0.25);
+                        }
+                    }
+                }
+                
+                Ok(extended)
+            })
+            .collect()
+    } else {
+        Ok(input_images.iter().map(|img| img.try_clone().unwrap()).collect())
+    };
+    let extended_images = extended_images?;
+
+    for g in 0..pipeline.num_groups() {
+        pipeline.fill_input_channels(
+            &all_channels,
+            g,
+            1,
+            |rects: &mut [ImageRectMut<InputT>]| {
+                for ((input, fill), used) in extended_images
+                    .iter()
+                    .zip(rects.iter_mut())
+                    .zip(uses_channel.iter().copied())
+                {
+                    let log_group_size = if used {
+                        (
+                            LOG_GROUP_SIZE - S::Type::SHIFT.0 as usize,
+                            LOG_GROUP_SIZE - S::Type::SHIFT.1 as usize,
+                        )
+                    } else {
+                        (LOG_GROUP_SIZE, LOG_GROUP_SIZE)
+                    };
+                    fill.copy_from(input.group_rect(g, log_group_size))?;
+                }
+                Ok(())
+            },
+        )?;
+    }
+
+    let mut stages = pipeline.into_stages().into_iter();
+    let stage = stages
+        .next()
+        .unwrap()
+        .downcast::<S>()
+        .expect("first stage is always the tested stage");
+
+    let outputs = stages
+        .map(|s| {
+            s.downcast::<SaveStage<OutputT>>()
+                .expect("all later stages are always SaveStage")
+                .into_buffer()
+        })
+        .collect();
+
+    Ok((*stage, outputs))
+}
